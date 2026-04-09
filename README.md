@@ -10,19 +10,15 @@
 
 ## Features
 
-| Feature | Method | Default |
-|---------|--------|---------|
-| [Invisible character stripping](#normalize) | `normalize()` | On |
-| [Bidi attack neutralization](#normalize) | `normalize()` | Strip |
-| [Tag character stripping](#normalize) | `normalize()` | On |
-| [Control character stripping](#normalize) | `normalize()` | On |
-| [Variation selector stripping](#normalize) | `normalize()` | On |
-| [Exotic whitespace normalization](#normalize) | `normalize()` | On |
-| [Zalgo text limiting](#normalize) | `normalize()` | Max 3 |
-| [NFKC normalization](#normalize) | `normalize()` | On |
-| [Homoglyph normalization](#normalize) | `normalize()` | On |
-| [Detailed threat report](#analyze) | `analyze()` | -- |
-| [Configurable instance](#createshield) | `createShield()` | -- |
+- **Invisible character stripping** -- zero-width spaces, BOM, fillers, math operators, tag characters
+- **Bidi attack neutralization** -- RTL overrides, directional isolates, embeddings
+- **Control character stripping** -- C0/C1 controls, deprecated formatting, non-characters
+- **Zalgo text limiting** -- caps stacked combining marks per base character
+- **NFKC normalization** -- fullwidth Latin, math bold/italic, enclosed/circled, super/subscript
+- **Homoglyph normalization** -- Cyrillic/Greek/Armenian/Cherokee lookalikes to Latin
+- **Exotic whitespace normalization** -- NBSP, Ogham, ideographic, thin/hair spaces to ASCII
+- **Variation selector stripping** -- 256 variation selectors that alter glyph rendering
+- **Zero runtime dependencies** -- works in Node.js, Bun, Deno, Cloudflare Workers, browsers
 
 ---
 
@@ -122,19 +118,32 @@ Each row is a single iMessage where the hidden instruction is embedded using tag
 
 ## API
 
-### `normalize`
+### `normalize(text, options?)`
+
+Strip all problematic characters and return a clean string. This is the main function -- zero config, handles everything by default. Use this when you just need clean text.
 
 ```typescript
 import { normalize } from "@photon-ai/unicode-shield";
 
-normalize("Hello\u200BWorld");           // "HelloWorld"
-normalize("Click: \u202Emoc.xyz");       // "Click: moc.xyz"
-normalize("Hello\u00A0World");           // "Hello World"
-normalize("p\u0430ypal");               // "paypal" (Cyrillic → Latin)
-normalize("\uFF28\uFF21\uFF23\uFF2B");   // "HACK" (fullwidth → ASCII)
+normalize("Hello\u200BWorld");           // "HelloWorld"  (zero-width space removed)
+normalize("Click: \u202Emoc.xyz");       // "Click: moc.xyz"  (bidi override stripped)
+normalize("Hello\u00A0World");           // "Hello World"  (NBSP → ASCII space)
+normalize("p\u0430ypal");               // "paypal"  (Cyrillic а → Latin a)
+normalize("\uFF28\uFF21\uFF23\uFF2B");   // "HACK"  (fullwidth → ASCII)
 ```
 
-### `analyze`
+Pass options to control what gets normalized:
+
+```typescript
+normalize(text, { confusables: false });  // keep Cyrillic/Greek as-is
+normalize(text, { diacritics: false });   // don't touch combining marks
+normalize(text, { bidi: "escape" });      // replace bidi chars with [U+XXXX]
+normalize(text, { collapseWhitespace: true, trim: true });  // clean up spacing
+```
+
+### `analyze(text, options?)`
+
+Same normalization as `normalize()`, but also returns a detailed report of every character that was acted on. Use this when you need visibility into what was found -- logging, alerting, auditing, or deciding whether to flag a message.
 
 ```typescript
 import { analyze } from "@photon-ai/unicode-shield";
@@ -149,21 +158,38 @@ const result = analyze("p\u0430ypal\u200B\u202E");
 //     { type: "bidi", codepoint: 0x202E, name: "RIGHT_TO_LEFT_OVERRIDE", action: "stripped" },
 //   ]
 // }
+
+if (result.dirty) {
+  console.log(`Found ${result.findings.length} threats`);
+  // log individual findings, flag the sender, etc.
+}
 ```
 
-### `createShield`
+### `createShield(options?)`
+
+Create a pre-configured shield instance when you want to reuse the same options across your app. Returns an object with `normalize()` and `analyze()` methods bound to those options.
 
 ```typescript
 import { createShield } from "@photon-ai/unicode-shield";
 
-const shield = createShield({
-  bidi: "escape",
-  confusables: false,
-  diacritics: 1,
+// strict mode for an AI agent pipeline
+const strict = createShield({
+  diacritics: 0,              // strip all combining marks
+  collapseWhitespace: true,
+  trim: true,
 });
 
-shield.normalize(text);
-shield.analyze(text);
+// permissive mode for a multilingual chat display
+const permissive = createShield({
+  confusables: false,    // don't normalize Cyrillic/Greek -- users write in those scripts
+  diacritics: false,     // don't touch combining marks
+  nfkc: false,           // keep fullwidth chars as-is
+});
+
+strict.normalize(agentInput);
+strict.analyze(agentInput);
+
+permissive.normalize(chatDisplay);
 ```
 
 ---
