@@ -365,6 +365,14 @@ Fullwidth ASCII (`U+FF01-FF5E`), Math alphanumeric (`U+1D400-1D7FF`), Enclosed/c
 
 ---
 
+## LLMs
+
+Download `llms.txt` for language model context:
+
+- [Download llms.txt](./llms.txt)
+
+---
+
 ## License
 
 MIT

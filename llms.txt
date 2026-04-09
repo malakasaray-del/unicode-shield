@@ -1,0 +1,306 @@
+# LLM usage guide for @photon-ai/unicode-shield
+
+This file is for language models / AI agents that use this package to sanitize
+incoming text before processing it. The package has zero runtime dependencies
+and works in Node.js, Bun, Deno, Cloudflare Workers, and browsers.
+
+--------------------------------------------------------------------------------
+1. What this package does
+--------------------------------------------------------------------------------
+
+Unicode Shield strips or normalizes dangerous Unicode characters from text.
+These characters are invisible to humans but parsed by LLMs, tokenizers, and
+downstream systems. They enable hidden text injection, bidi spoofing, homoglyph
+phishing, Zalgo obfuscation, and encoding bypass attacks.
+
+iMessage delivers every Unicode character intact -- nothing is stripped in
+transport. This package catches all of them.
+
+--------------------------------------------------------------------------------
+2. Installation
+--------------------------------------------------------------------------------
+
+npm install @photon-ai/unicode-shield
+# or
+bun add @photon-ai/unicode-shield
+
+Zero runtime dependencies.
+
+--------------------------------------------------------------------------------
+3. Exports
+--------------------------------------------------------------------------------
+
+The package exports three functions and several types:
+
+Functions:
+  - normalize(text, options?)   → string
+  - analyze(text, options?)     → AnalyzeResult
+  - createShield(options?)      → Shield
+
+Types:
+  - ShieldOptions
+  - BidiMode
+  - FindingType
+  - Finding
+  - AnalyzeResult
+  - Shield
+
+--------------------------------------------------------------------------------
+4. normalize(text, options?)
+--------------------------------------------------------------------------------
+
+The main function. Strips all problematic characters and returns clean text.
+Zero config -- handles everything by default.
+
+  import { normalize } from "@photon-ai/unicode-shield";
+
+  const clean = normalize(userInput);
+
+Examples:
+  normalize("Hello\u200BWorld")          → "HelloWorld"
+  normalize("Click: \u202Emoc.xyz")      → "Click: moc.xyz"
+  normalize("Hello\u00A0World")          → "Hello World"
+  normalize("p\u0430ypal")              → "paypal"
+  normalize("\uFF28\uFF21\uFF23\uFF2B")  → "HACK"
+
+Override defaults with options:
+  normalize(text, { confusables: false })
+  normalize(text, { bidi: "escape" })
+  normalize(text, { diacritics: 1 })
+  normalize(text, { collapseWhitespace: true, trim: true })
+
+When to use: you just need clean text. Most common use case.
+
+--------------------------------------------------------------------------------
+5. analyze(text, options?)
+--------------------------------------------------------------------------------
+
+Same normalization as normalize(), but also returns a report of every character
+that was acted on.
+
+  import { analyze } from "@photon-ai/unicode-shield";
+
+  const result = analyze(userInput);
+  // result.text     → cleaned string
+  // result.dirty    → boolean (true if any threats found)
+  // result.findings → array of Finding objects
+
+Each Finding has:
+  - type:      FindingType (e.g. "invisible", "bidi", "confusable")
+  - codepoint: number (the Unicode codepoint)
+  - index:     number (position in the original string)
+  - name:      string (human-readable name like "ZERO_WIDTH_SPACE")
+  - action:    "stripped" | "escaped" | "normalized"
+
+When to use: you need visibility into what was found -- for logging, alerting,
+auditing, or deciding whether to flag a message.
+
+Example:
+  const result = analyze(message.text ?? "");
+  if (result.dirty) {
+    console.log(`Found ${result.findings.length} threats`);
+  }
+  const clean = result.text;
+
+--------------------------------------------------------------------------------
+6. createShield(options?)
+--------------------------------------------------------------------------------
+
+Creates a pre-configured instance for repeated use. Returns an object with
+normalize() and analyze() methods bound to those options.
+
+  import { createShield } from "@photon-ai/unicode-shield";
+
+  const shield = createShield({
+    diacritics: 0,
+    collapseWhitespace: true,
+    trim: true,
+  });
+
+  shield.normalize(text);
+  shield.analyze(text);
+
+When to use: you want to reuse the same options across your app without passing
+them to every call.
+
+--------------------------------------------------------------------------------
+7. Options (ShieldOptions)
+--------------------------------------------------------------------------------
+
+All options are optional. Defaults handle the full attack surface.
+
+  invisibles          boolean        default: true
+    Strip zero-width chars, BOM, fillers, invisible operators.
+
+  bidi                "strip" | "escape" | "ignore"    default: "strip"
+    "strip"  → remove bidi control characters entirely
+    "escape" → replace with [U+XXXX] placeholders
+    "ignore" → pass through unchanged
+
+  controls            boolean        default: true
+    Strip C0 (U+0000-U+001F, U+007F) and C1 (U+0080-U+009F) control characters.
+    Preserves tab (\t), newline (\n), carriage return (\r).
+
+  tags                boolean        default: true
+    Strip tag characters (U+E0000-U+E007F). These encode hidden ASCII.
+
+  variationSelectors  boolean        default: true
+    Strip variation selectors (U+FE00-FE0F, U+E0100-E01EF). 256 total.
+
+  normalizeWhitespace boolean        default: true
+    Normalize exotic whitespace (NBSP, Ogham, ideographic, thin/hair spaces)
+    to regular ASCII space.
+
+  separators          boolean        default: true
+    Strip line separator (U+2028) and paragraph separator (U+2029).
+
+  formatting          boolean        default: true
+    Strip interlinear annotations, deprecated formatting, object replacement,
+    replacement character, non-characters.
+
+  diacritics          number | false default: 3
+    Max combining marks per base character.
+    3 = normal accented text preserved, Zalgo stripped.
+    0 = strip all combining marks.
+    false = disable entirely.
+
+  nfkc                boolean        default: true
+    NFKC normalize fullwidth ASCII, math bold/italic, enclosed/circled,
+    superscript/subscript to their ASCII equivalents.
+
+  confusables         boolean        default: true
+    Normalize Cyrillic/Greek/Armenian/Cherokee homoglyphs to Latin.
+    Disable for multilingual apps where users write in those scripts.
+
+  collapseWhitespace  boolean        default: false
+    Collapse consecutive spaces/tabs to single space, newlines to one.
+
+  trim                boolean        default: false
+    Trim leading and trailing whitespace.
+
+--------------------------------------------------------------------------------
+8. Types
+--------------------------------------------------------------------------------
+
+  type BidiMode = "strip" | "escape" | "ignore";
+
+  type FindingType =
+    | "invisible" | "bidi" | "control" | "tag" | "variation-selector"
+    | "special-space" | "separator" | "formatting" | "non-character"
+    | "diacritics" | "confusable" | "nfkc";
+
+  interface Finding {
+    type: FindingType;
+    codepoint: number;
+    index: number;
+    name: string;
+    action: "stripped" | "escaped" | "normalized";
+  }
+
+  interface AnalyzeResult {
+    text: string;
+    dirty: boolean;
+    findings: Finding[];
+  }
+
+  interface Shield {
+    normalize(text: string): string;
+    analyze(text: string): AnalyzeResult;
+  }
+
+--------------------------------------------------------------------------------
+9. Pipeline order
+--------------------------------------------------------------------------------
+
+The normalization pipeline runs in this order:
+
+  1. NFKC normalization (collapses fullwidth/math/enclosed to ASCII)
+  2. Character stripping (invisibles, controls, tags, selectors, whitespace,
+     separators, formatting)
+  3. Bidi processing (strip, escape, or ignore)
+  4. Diacritics limiting (Zalgo defense)
+  5. Confusable normalization (homoglyph → Latin)
+  6. Whitespace collapse (if enabled)
+  7. Trim (if enabled)
+
+NFKC runs first so collapsed forms get caught by subsequent steps.
+
+--------------------------------------------------------------------------------
+10. Usage with Photon iMessage SDKs
+--------------------------------------------------------------------------------
+
+With @photon-ai/advanced-imessage-kit:
+
+  import { SDK } from "@photon-ai/advanced-imessage-kit";
+  import { normalize, analyze } from "@photon-ai/unicode-shield";
+
+  const sdk = SDK({ serverUrl: "http://localhost:1234" });
+  await sdk.connect();
+
+  sdk.on("new-message", async (message) => {
+    const result = analyze(message.text ?? "");
+    if (result.dirty) {
+      console.log(`[SHIELD] ${result.findings.length} threats stripped`);
+    }
+    const reply = await yourAgent.process(result.text);
+    await sdk.messages.sendMessage({
+      chatGuid: message.chats?.[0]?.guid ?? `iMessage;-;${message.handle?.address}`,
+      message: reply,
+    });
+  });
+
+With @photon-ai/imessage-kit:
+
+  import { IMessageSDK } from "@photon-ai/imessage-kit";
+  import { normalize } from "@photon-ai/unicode-shield";
+
+  const sdk = new IMessageSDK();
+
+  await sdk.startWatching({
+    onDirectMessage: async (msg) => {
+      const clean = normalize(msg.text ?? "");
+      const reply = await yourAgent.process(clean);
+      await sdk.send(msg.sender, reply);
+    },
+    onGroupMessage: async (msg) => {
+      const clean = normalize(msg.text ?? "");
+      const reply = await yourAgent.process(clean);
+      await sdk.send(msg.chatId, reply);
+    },
+  });
+
+--------------------------------------------------------------------------------
+11. Coverage
+--------------------------------------------------------------------------------
+
+400+ codepoints across 16 categories. All 51 iMessage attack vectors handled.
+
+Categories:
+  - Zero-width and invisible characters (ZWSP, ZWNJ, ZWJ, BOM, fillers, etc.)
+  - Bidi attack characters (RTL/LTR overrides, embeddings, isolates)
+  - Control characters (C0, C1)
+  - Tag characters (U+E0000-E007F, 128 chars encoding hidden ASCII)
+  - Variation selectors (U+FE00-FE0F, U+E0100-E01EF, 256 total)
+  - Special whitespace (NBSP, Ogham, ideographic, thin/hair, etc.)
+  - Separators (line/paragraph)
+  - Annotation and formatting (interlinear, deprecated, non-characters)
+  - Musical formatting (U+1D173-1D17A)
+  - Shorthand controls (U+1BCA0-1BCA3)
+  - Stacked diacritics / Zalgo (all combining mark ranges)
+  - Confusable homoglyphs (Cyrillic, Greek, Armenian, Cherokee → Latin)
+  - NFKC targets (fullwidth, math alphanumeric, enclosed, super/subscript)
+
+--------------------------------------------------------------------------------
+12. Safety notes for LLMs
+--------------------------------------------------------------------------------
+
+- Always normalize user input BEFORE passing it to your LLM or agent pipeline.
+- The normalize() function is pure and side-effect free. Safe to call on every
+  message.
+- If you need to preserve the original text for logging, use analyze() which
+  returns both the cleaned text and the original findings.
+- For multilingual apps, disable confusables (confusables: false) to avoid
+  normalizing legitimate Cyrillic/Greek text.
+- The package does NOT handle non-Unicode attacks (prompt injection via natural
+  language, base64 payloads, delimiter injection, etc.). Those require
+  prompt-level defenses.
