@@ -84,7 +84,7 @@ These examples show what the human sees, what's actually hidden in the text, and
 
 | | Text |
 |---|---|
-| **Human sees** | Ĥ͚̺̙̜̞̀̑̏ello -- garbled, unreadable mess with marks stacking vertically |
+| **Human sees** | "Hello" buried under 50 stacked diacritical marks -- completely unreadable |
 | **What's hidden** | `H` + 50 stacked combining diacritical marks + `ello` |
 | **Agent without shield** | Token explosion -- each combining mark is a separate token, wastes context window |
 | **Agent with shield** | `Hello` with max 3 combining marks per base character |
