@@ -263,7 +263,7 @@ interface Shield {
 import { SDK } from "@photon-ai/advanced-imessage-kit";
 import { normalize, analyze } from "@photon-ai/unicode-shield";
 
-const sdk = SDK({ serverUrl: "https://<id>.imsgd.photon.codes" });
+const sdk = SDK({ serverUrl: "https://abc123.imsgd.photon.codes" });
 await sdk.connect();
 
 sdk.on("new-message", async (message) => {
