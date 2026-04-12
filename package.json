@@ -1,6 +1,6 @@
 {
   "name": "@photon-ai/unicode-shield",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Unicode normalization layer — strips invisible characters and neutralizes bidirectional text attacks",
   "type": "module",
   "main": "./dist/index.cjs",
